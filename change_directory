@@ -1,0 +1,50 @@
+## Automatically sets the correct HERD PHP version for php, composer and wp commands
+## Adds a wpx command for using wp-cli with php debug enabled
+## Automatically sets the SITE_PATH when running wp-cli commands in subdirectories
+## Assumes sites are located in ~/Sites/
+## Set your own path using HERD_SITES_PATH
+
+## Save this file on your computer and make sure to source it in your ~/.zshrc file
+## Start Example
+# export HERD_SITES_PATH="/Users/markjansen/Sites/"
+# source ~/Workspace/Aether/scripts/change-directory
+
+## Credit for this script very much goes to Marinus Klasen.
+
+## End Example
+
+function chpwd() {
+    local current_path=$(pwd)
+    local site_name=""
+    local sites_path=${HERD_SITES_PATH:-/Sites}
+
+    # Remove trailing slash if present
+    sites_path=${sites_path%/}
+
+    # If HERD_SITES_PATH is empty or just "/", use the default "/Sites"
+    if [[ -z "$sites_path" || "$sites_path" == "/" ]]; then
+        sites_path="/Sites"
+    fi
+
+    # If sites_path is not an absolute path, assume it's relative to home directory
+    if [[ "$sites_path" != /* ]]; then
+        sites_path="$HOME/$sites_path"
+    fi
+
+    if [[ $current_path == *"$sites_path"/* ]]; then
+        # Check if we're directly in a site directory or in a subdirectory
+        if [[ $current_path == "$sites_path"/* && ! $current_path == "$sites_path"/*/*  ]]; then
+            site_name=$(basename "$current_path")
+        else
+            site_name=$(echo $current_path | sed -n "s|.*$sites_path/\([^/]*\).*|\1|p")
+        fi
+
+        if [[ -n "$site_name" ]]; then
+            echo $fg_no_bold[green] $'\u21AF' "--- Setting wp-cli and composer to use PHP version for https://$site_name.test"
+            alias composer="herd composer --site=$site_name"
+            alias php="herd php --site=$site_name"
+            alias wp="herd php --site=$site_name /usr/local/bin/wp-cli --path=$sites_path/$site_name"
+            alias wpx="herd debug --site=$site_name /usr/local/bin/wp-cli --path=$sites_path/$site_name"
+        fi
+    fi
+}
