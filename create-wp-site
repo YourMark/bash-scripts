@@ -1,0 +1,330 @@
+#!/bin/zsh
+
+# WordPress Site Creation Script
+# Usage: ./create-wp-site [site-name]
+
+# Source zsh configuration for WP-CLI
+source ~/.zshrc
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Default values
+DEFAULT_SITE_NAME="my-wordpress-site"
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Get user input or use defaults
+SITE_NAME=${1:-$DEFAULT_SITE_NAME}
+
+print_status "Creating WordPress site: $SITE_NAME"
+
+# 1. Use HERD_SITES_PATH if set, otherwise fallback to ~/Sites
+sites_path=${HERD_SITES_PATH:-~/Sites}
+site_dir="$sites_path/$SITE_NAME"
+
+print_status "Site directory: $site_dir"
+
+# Create project directory
+if [ -d "$site_dir" ]; then
+    print_warning "Directory $site_dir already exists"
+    echo -n "Do you want to continue? (y/N): "
+    read REPLY
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+else
+    mkdir -p "$site_dir"
+    print_success "Created directory: $site_dir"
+fi
+
+# Change to the new directory
+cd "$site_dir"
+print_status "Changed to directory: $(pwd)"
+
+# 2. Installation method selection
+echo
+print_status "Choose installation method:"
+echo "1) Regular install (Download WordPress core)"
+echo "2) Composer install (Create composer.json with WordPress)"
+echo
+echo -n "Select option (1 or 2): "
+read install_method
+echo
+
+case $install_method in
+    1)
+        print_status "Selected: Regular WordPress install"
+        ;;
+    2)
+        print_status "Selected: Composer WordPress install"
+        print_error "Composer install not implemented yet"
+        exit 1
+        ;;
+    *)
+        print_error "Invalid selection. Please choose 1 or 2."
+        exit 1
+        ;;
+esac
+
+# 3. Ask for main language
+print_status "Main Language Configuration:"
+echo "Select the main language for your site:"
+
+# Array of common languages
+declare -A lang_options=(
+    [1]="en_US (English)"
+    [2]="nl_NL (Dutch)"
+    [3]="de_DE (German)"
+    [4]="fr_FR (French)"
+    [5]="es_ES (Spanish)"
+    [6]="it_IT (Italian)"
+    [7]="pt_PT (Portuguese)"
+    [8]="sv_SE (Swedish)"
+    [9]="da_DK (Danish)"
+    [10]="no_NO (Norwegian)"
+)
+
+# Display options
+for i in {1..10}; do
+    echo "$i) ${lang_options[$i]}"
+done
+echo
+echo -n "Select main language [default: 1]: "
+read selected_number
+selected_number=${selected_number:-1}
+
+# Convert number to language code
+case $selected_number in
+    1) main_language="en_US" ;;
+    2) main_language="nl_NL" ;;
+    3) main_language="de_DE" ;;
+    4) main_language="fr_FR" ;;
+    5) main_language="es_ES" ;;
+    6) main_language="it_IT" ;;
+    7) main_language="pt_PT" ;;
+    8) main_language="sv_SE" ;;
+    9) main_language="da_DK" ;;
+    10) main_language="no_NO" ;;
+    *)
+        print_warning "Invalid selection, defaulting to English"
+        main_language="en_US"
+        ;;
+esac
+
+print_status "Selected main language: $main_language"
+
+# 4. Core download with that language
+# Check if WP-CLI is installed
+if ! command -v wp &> /dev/null; then
+    print_error "WP-CLI is not installed. Please install it first."
+    exit 1
+fi
+
+# Download WordPress in the selected main language
+if [[ "$main_language" == "en_US" ]]; then
+    print_status "Downloading WordPress (English)..."
+    wp core download
+else
+    print_status "Downloading WordPress ($main_language)..."
+    wp core download --locale="$main_language"
+fi
+
+# 4. Ask for database credentials
+print_status "Database Configuration:"
+echo -n "Database user (default: root): "
+read db_user
+db_user=${db_user:-root}
+
+echo -n "Database name (default: $SITE_NAME): "
+read db_name
+db_name=${db_name:-$SITE_NAME}
+
+echo -n "Database host (default: 127.0.0.1): "
+read db_host
+db_host=${db_host:-127.0.0.1}
+
+echo -n "Database prefix (default: wp_): "
+read db_prefix
+db_prefix=${db_prefix:-wp_}
+
+echo -n "Database password: "
+read -s db_password
+echo
+
+# 5. Ask for multisite
+echo
+echo -n "Create as multisite? (y/N): "
+read multisite_choice
+multisite=""
+secondary_languages=()
+
+# 6. If multisite yes, ask for additional languages
+if [[ $multisite_choice =~ ^[Yy]$ ]]; then
+    multisite="--multisite"
+    print_status "Multisite installation selected"
+
+    echo
+    print_status "Additional Languages for Multisite:"
+    echo "Select additional languages (besides $main_language) for subsites:"
+    echo "Enter numbers separated by commas, or press Enter to skip"
+
+    # Display options (excluding the main language)
+    for i in {1..10}; do
+        case $i in
+            1) lang_code="en_US" ;;
+            2) lang_code="nl_NL" ;;
+            3) lang_code="de_DE" ;;
+            4) lang_code="fr_FR" ;;
+            5) lang_code="es_ES" ;;
+            6) lang_code="it_IT" ;;
+            7) lang_code="pt_PT" ;;
+            8) lang_code="sv_SE" ;;
+            9) lang_code="da_DK" ;;
+            10) lang_code="no_NO" ;;
+        esac
+
+        if [[ "$lang_code" != "$main_language" ]]; then
+            echo "$i) ${lang_options[$i]}"
+        fi
+    done
+
+    echo
+    echo -n "Select additional languages (e.g., 2,3,4) or press Enter to skip: "
+    read selected_numbers
+
+    if [[ -n "$selected_numbers" ]]; then
+        # Convert numbers to language codes
+        IFS=',' read -A numbers <<< "${selected_numbers// /}"
+        for num in "${numbers[@]}"; do
+            case $num in
+                1) if [[ "en_US" != "$main_language" ]]; then secondary_languages+="en_US"; fi ;;
+                2) if [[ "nl_NL" != "$main_language" ]]; then secondary_languages+="nl_NL"; fi ;;
+                3) if [[ "de_DE" != "$main_language" ]]; then secondary_languages+="de_DE"; fi ;;
+                4) if [[ "fr_FR" != "$main_language" ]]; then secondary_languages+="fr_FR"; fi ;;
+                5) if [[ "es_ES" != "$main_language" ]]; then secondary_languages+="es_ES"; fi ;;
+                6) if [[ "it_IT" != "$main_language" ]]; then secondary_languages+="it_IT"; fi ;;
+                7) if [[ "pt_PT" != "$main_language" ]]; then secondary_languages+="pt_PT"; fi ;;
+                8) if [[ "sv_SE" != "$main_language" ]]; then secondary_languages+="sv_SE"; fi ;;
+                9) if [[ "da_DK" != "$main_language" ]]; then secondary_languages+="da_DK"; fi ;;
+                10) if [[ "no_NO" != "$main_language" ]]; then secondary_languages+="no_NO"; fi ;;
+                *) print_warning "Invalid selection: $num (ignored)" ;;
+            esac
+        done
+
+        if [[ ${#secondary_languages[@]} -gt 0 ]]; then
+            print_status "Selected additional languages: ${secondary_languages[*]}"
+        fi
+    fi
+fi
+
+# 7. Create wp-config
+print_status "Creating wp-config.php..."
+wp config create \
+    --dbname="$db_name" \
+    --dbuser="$db_user" \
+    --dbpass="$db_password" \
+    --dbhost="$db_host" \
+    --dbprefix="$db_prefix"
+
+# Create database
+print_status "Creating database..."
+wp db create
+
+# 8. Ask for admin user and finish installation
+print_status "Admin User Configuration:"
+echo -n "Admin username (default: admin): "
+read admin_user
+admin_user=${admin_user:-admin}
+
+echo -n "Admin email: "
+read admin_email
+while [[ -z "$admin_email" ]]; do
+    echo -n "Admin email is required: "
+    read admin_email
+done
+
+# Auto-generate password
+admin_password=$(openssl rand -base64 12)
+
+# Install WordPress
+if [[ -n $multisite ]]; then
+    print_status "Installing WordPress (Multisite)..."
+    wp core multisite-install \
+        --url="https://$SITE_NAME.test" \
+        --title="$SITE_NAME" \
+        --admin_user="$admin_user" \
+        --admin_password="$admin_password" \
+        --admin_email="$admin_email"
+
+    # Create subsites for additional languages
+    for lang in "${secondary_languages[@]}"; do
+        # Get first 2 lowercase letters for subfolder
+        lang_subfolder=$(echo "$lang" | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+        print_status "Creating subsite for language: $lang (subfolder: $lang_subfolder)"
+        wp site create \
+            --slug="$lang_subfolder" \
+            --title="$SITE_NAME ($lang)" \
+            --email="$admin_email"
+
+        # Install language pack for subsite
+        wp language core install "$lang" --url="https://$SITE_NAME.test/$lang_subfolder"
+        wp language core activate "$lang" --url="https://$SITE_NAME.test/$lang_subfolder"
+    done
+else
+    print_status "Installing WordPress (Single Site)..."
+    wp core install \
+        --url="https://$SITE_NAME.test" \
+        --title="$SITE_NAME" \
+        --admin_user="$admin_user" \
+        --admin_password="$admin_password" \
+        --admin_email="$admin_email"
+
+    herd secure
+fi
+
+# Final summary
+print_success "WordPress site created successfully!"
+print_success "Site Name: $SITE_NAME"
+print_success "URL: https://$SITE_NAME.test"
+print_success "Admin User: $admin_user"
+print_success "Admin Password: $admin_password"
+print_success "Admin Email: $admin_email"
+print_success "Database: $db_name"
+print_success "DB User: $db_user"
+print_success "Main Language: $main_language"
+
+if [[ -n $multisite ]]; then
+    print_success "Multisite installation"
+    if [[ ${#secondary_languages[@]} -gt 0 ]]; then
+        print_success "Additional language subsites:"
+        for lang in "${secondary_languages[@]}"; do
+            lang_subfolder=$(echo "$lang" | cut -c1-2 | tr '[:upper:]' '[:lower:]')
+            print_success "  $lang: https://$SITE_NAME.test/$lang_subfolder"
+        done
+    fi
+fi
+
+print_warning "Please save these credentials in a secure location!"
+print_status "WordPress admin: https://$SITE_NAME.test/wp-admin"
